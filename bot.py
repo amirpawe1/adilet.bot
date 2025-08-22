@@ -5,7 +5,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
 import time
 
-API_TOKEN = os.getenv("8235029301:AAHtnMztthjduYDGIgxB47Q1OOfnaE8tO20")
+API_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "7341098964"))
 
 bot = Bot(token=API_TOKEN)
