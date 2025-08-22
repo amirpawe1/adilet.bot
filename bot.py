@@ -6,7 +6,7 @@ from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_applicati
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-WEBHOOK_HOST = os.getenv("WEBHOOK_HOST")
+WEBHOOK_HOST = os.getenv("https://github.com/amirpawe1/adilet.bot")
 WEBHOOK_PATH = "/webhook"
 WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 
