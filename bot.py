@@ -3,8 +3,7 @@ import logging
 from aiohttp import web
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from aiogram.utils.keyboard import InlineKeyboardBuilder
-from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = 7341098964
@@ -17,111 +16,90 @@ WEBHOOK_URL = WEBHOOK_HOST + WEBHOOK_PATH
 
 logging.basicConfig(level=logging.INFO)
 
+# 📦 Бот и Диспетчер
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-def main_menu():
-    builder = InlineKeyboardBuilder()
-    builder.button(text="💳 Оплатить доступ", callback_data="pay")
-    builder.button(text="ℹ Подробнее о канале", callback_data="about")
-    builder.button(text="🆘 Поддержка", callback_data="support")
-    builder.adjust(1)
-    return builder.as_markup()
+pending_users = {}
 
-def pay_menu():
-    builder = InlineKeyboardBuilder()
-    builder.button(text="1 месяц — 5000₸", callback_data="pay_1m")
-    builder.button(text="3 месяца — 12000₸", callback_data="pay_3m")
-    builder.button(text="⬅️ Назад", callback_data="back")
-    builder.adjust(1)
-    return builder.as_markup()
+main_kb = InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text="💳 Оплатить доступ", callback_data="pay")],
+    [InlineKeyboardButton(text="ℹ Подробнее о канале", callback_data="about")],
+    [InlineKeyboardButton(text="🆘 Поддержка", callback_data="support")]
+])
 
-def support_menu():
-    builder = InlineKeyboardBuilder()
-    builder.button(text="✉ Написать поддержку", url=f"https://t.me/{SUPPORT_USERNAME}")
-    builder.button(text="⬅️ Назад", callback_data="back")
-    builder.adjust(1)
-    return builder.as_markup()
-
-def about_menu():
-    builder = InlineKeyboardBuilder()
-    builder.button(text="⬅️ Назад", callback_data="back")
-    return builder.as_markup()
+back_kb = InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text="⬅️ Назад", callback_data="back")]
+])
 
 @dp.message(Command("start"))
-async def start_cmd(message: types.Message):
+async def cmd_start(message: types.Message):
     await message.answer(
-        "👋 Привет! Добро пожаловать в бот канала Адлета!\n\n"
-        "Здесь ты можешь получить доступ к закрытому контенту ⚽",
-        reply_markup=main_menu()
+        "👋 Привет! Добро пожаловать в бот канала Адлета!\n\nВыберите действие ниже 👇",
+        reply_markup=main_kb
     )
 
 @dp.callback_query(F.data == "pay")
-async def pay_section(callback: types.CallbackQuery):
+async def pay(callback: types.CallbackQuery):
     await callback.message.edit_text(
-        "💳 Выберите тариф:\n\n"
-        "• 1 месяц — 5000₸\n"
-        "• 3 месяца — 12000₸\n\n"
-        "После оплаты отправьте чек сюда 📎",
-        reply_markup=pay_menu()
+        "💳 Тарифы:\n\n"
+        "• 1 месяц — 4990₸\n"
+        "• 6 месяцев — 19990₸\n"
+        "• 12 месяцев — 44990₸\n\n"
+        "После оплаты отправьте чек сюда 📎 (фото или файл).",
+        reply_markup=back_kb
     )
+    pending_users[callback.from_user.id] = True
     await callback.answer()
 
 @dp.callback_query(F.data == "about")
-async def about_section(callback: types.CallbackQuery):
+async def about(callback: types.CallbackQuery):
     await callback.message.edit_text(
         "⚽ Канал тренера Адлета — это:\n"
         "• Обучающий контент по футболу\n"
         "• Разбор тактик\n"
         "• Советы для игроков\n\n"
-        "Присоединяйтесь и улучшайте игру! 💪",
-        reply_markup=about_menu()
+        "Подключайтесь и улучшайте игру!",
+        reply_markup=back_kb
     )
     await callback.answer()
 
 @dp.callback_query(F.data == "support")
-async def support_section(callback: types.CallbackQuery):
+async def support(callback: types.CallbackQuery):
     await callback.message.edit_text(
-        "✉ Поддержка доступна по кнопке ниже 👇",
-        reply_markup=support_menu()
+        f"✉ Поддержка: @{SUPPORT_USERNAME}",
+        reply_markup=back_kb
     )
     await callback.answer()
 
 @dp.callback_query(F.data == "back")
-async def go_back(callback: types.CallbackQuery):
+async def back(callback: types.CallbackQuery):
     await callback.message.edit_text(
-        "⬅️ Главное меню:",
-        reply_markup=main_menu()
+        "⬅️ Возврат в главное меню",
+        reply_markup=main_kb
     )
     await callback.answer()
-
-@dp.callback_query(F.data.startswith("pay_"))
-async def fake_payment(callback: types.CallbackQuery):
-    if callback.data == "pay_1m":
-        text = "✅ Вы выбрали тариф: 1 месяц — 5000₸"
-    else:
-        text = "✅ Вы выбрали тариф: 3 месяца — 12000₸"
-    await callback.message.edit_text(
-        f"{text}\n\nОтправьте чек сюда 📎",
-        reply_markup=about_menu()
-    )
-    await callback.answer()
-
-@dp.message(F.document | F.photo)
-async def handle_payment_proof(message: types.Message):
-    await message.forward(ADMIN_ID)
-    await message.answer("✅ Чек отправлен администратору. Ожидайте подтверждения.")
 
 @dp.message(F.document | F.photo)
 async def handle_files(message: types.Message):
-    if ADMIN_ID:
+    user_id = message.from_user.id
+    if user_id in pending_users and pending_users[user_id]:
+        # Пересылаем админу
         await message.forward(ADMIN_ID)
-        await bot.send_message(ADMIN_ID, f"💡 Новый чек от пользователя ID: {message.from_user.id}\n"
-                                         f"Чтобы выдать доступ, используй команду:\n"
-                                         f"/approve {message.from_user.id}")
         await message.answer("✅ Чек отправлен на проверку админу.")
+        # Уведомляем админа
+        await bot.send_message(
+            ADMIN_ID,
+            f"📥 Новый чек от пользователя:\n"
+            f"👤 {message.from_user.full_name}\n"
+            f"🆔 ID: {message.from_user.id}\n\n"
+            f"Чтобы подтвердить доступ:\n"
+            f"/approve {message.from_user.id}\n\n"
+            f"Чтобы отклонить:\n"
+            f"/reject {message.from_user.id}"
+        )
     else:
-        await message.answer("⚠️ ADMIN_ID не задан. Сообщи админу!")
+        await message.answer("⚠️ Сначала выберите 'Оплатить доступ', затем отправьте чек.")
 
 @dp.message(Command("approve"))
 async def approve(message: types.Message):
@@ -129,26 +107,55 @@ async def approve(message: types.Message):
         parts = message.text.split()
         if len(parts) == 2 and parts[1].isdigit():
             user_id = int(parts[1])
-            try:
-                await bot.send_message(user_id, f"✅ Доступ подтверждён! Вот ссылка на канал:\n{CHANNEL_LINK}")
-                await message.answer(f"✅ Доступ выдан пользователю {user_id}")
-            except Exception as e:
-                await message.answer(f"⚠️ Ошибка при отправке пользователю {user_id}: {e}")
+            await bot.send_message(
+                user_id,
+                f"✅ Оплата подтверждена! Вот ссылка на канал:\n{CHANNEL_LINK}"
+            )
+            await message.answer(f"✅ Доступ для пользователя {user_id} подтверждён.")
+            if user_id in pending_users:
+                del pending_users[user_id]
         else:
-            await message.answer("❌ Используй формат: /approve user_id")
+            await message.answer("⚠ Используй: /approve user_id")
     else:
         await message.answer("⛔ У тебя нет прав для этой команды.")
 
+@dp.message(Command("reject"))
+async def reject(message: types.Message):
+    if message.from_user.id == ADMIN_ID:
+        parts = message.text.split()
+        if len(parts) == 2 and parts[1].isdigit():
+            user_id = int(parts[1])
+            await bot.send_message(
+                user_id,
+                "❌ Оплата не подтверждена. Пожалуйста, проверьте реквизиты и попробуйте снова."
+            )
+            await message.answer(f"❌ Оплата пользователя {user_id} отклонена.")
+            if user_id in pending_users:
+                del pending_users[user_id]
+        else:
+            await message.answer("⚠ Используй: /reject user_id")
+    else:
+        await message.answer("⛔ У тебя нет прав для этой команды.")
+
+async def on_startup(app):
+    await bot.set_webhook(WEBHOOK_URL)
+
+async def on_shutdown(app):
+    await bot.delete_webhook()
+    await bot.session.close()
+
+async def handle_health(request):
+    return web.Response(text="I'm alive!")
+
 def main():
     app = web.Application()
-    app.router.add_get("/", health)
-    SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path=WEBHOOK_PATH)
-    setup_application(app, dp, bot=bot)
+    app.router.add_post(WEBHOOK_PATH, dp.start_webhook)
+    app.router.add_get("/", handle_health)
     app.on_startup.append(on_startup)
     app.on_shutdown.append(on_shutdown)
     port = int(os.getenv("PORT", "10000"))
     web.run_app(app, host="0.0.0.0", port=port)
 
+
 if __name__ == "__main__":
     main()
-
