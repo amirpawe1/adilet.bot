@@ -92,10 +92,15 @@ async def on_shutdown(app):
 async def handle_health(request):
     return web.Response(text="I'm alive!")
 
+async def webhook_handler(request):
+    data = await request.json()
+    update = types.Update(**data)
+    await dp.feed_update(bot, update)
+    return web.Response()
+
 async def main():
     app = web.Application()
-    dp.include_router(dp)
-    app.router.add_post(WEBHOOK_PATH, dp.start_webhook)
+    app.router.add_post(WEBHOOK_PATH, webhook_handler)
     app.router.add_get("/", handle_health)
     app.on_startup.append(on_startup)
     app.on_shutdown.append(on_shutdown)
