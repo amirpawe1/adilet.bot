@@ -45,9 +45,8 @@ async def cmd_start(message: types.Message):
 @dp.callback_query(F.data == "pay")
 async def pay(callback: types.CallbackQuery):
     await callback.message.edit_text(
+        "Реквезиты: +77777777777"
         "💳 Тарифы:\n\n"
-        "Реквеиты:
-номер - +77777777777"
         "• 1 месяц — 4990₸\n"
         "• 6 месяцев — 19990₸\n"
         "• 12 месяцев — 44990₸\n\n"
