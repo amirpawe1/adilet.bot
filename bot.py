@@ -112,22 +112,32 @@ async def handle_payment_proof(message: types.Message):
     await message.forward(ADMIN_ID)
     await message.answer("✅ Чек отправлен администратору. Ожидайте подтверждения.")
 
-@dp.message(Command("approve"))
-async def approve_cmd(message: types.Message):
-    if message.from_user.id == ADMIN_ID:
-        await message.answer(f"✅ Доступ подтверждён!\nВот ссылка на канал:\n{CHANNEL_LINK}")
+@dp.message(F.document | F.photo)
+async def handle_files(message: types.Message):
+    if ADMIN_ID:
+        await message.forward(ADMIN_ID)
+        await bot.send_message(ADMIN_ID, f"💡 Новый чек от пользователя ID: {message.from_user.id}\n"
+                                         f"Чтобы выдать доступ, используй команду:\n"
+                                         f"/approve {message.from_user.id}")
+        await message.answer("✅ Чек отправлен на проверку админу.")
     else:
-        await message.answer("⛔ У тебя нет прав использовать эту команду.")
+        await message.answer("⚠️ ADMIN_ID не задан. Сообщи админу!")
 
-async def on_startup(app):
-    await bot.set_webhook(WEBHOOK_URL)
-
-async def on_shutdown(app):
-    await bot.delete_webhook()
-    await bot.session.close()
-
-async def health(request):
-    return web.Response(text="I'm alive!")
+@dp.message(Command("approve"))
+async def approve(message: types.Message):
+    if message.from_user.id == ADMIN_ID:
+        parts = message.text.split()
+        if len(parts) == 2 and parts[1].isdigit():
+            user_id = int(parts[1])
+            try:
+                await bot.send_message(user_id, f"✅ Доступ подтверждён! Вот ссылка на канал:\n{CHANNEL_LINK}")
+                await message.answer(f"✅ Доступ выдан пользователю {user_id}")
+            except Exception as e:
+                await message.answer(f"⚠️ Ошибка при отправке пользователю {user_id}: {e}")
+        else:
+            await message.answer("❌ Используй формат: /approve user_id")
+    else:
+        await message.answer("⛔ У тебя нет прав для этой команды.")
 
 def main():
     app = web.Application()
