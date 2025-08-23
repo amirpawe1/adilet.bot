@@ -4,6 +4,7 @@ from aiohttp import web
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = 7341098964
@@ -29,39 +30,25 @@ main_kb = ReplyKeyboardMarkup(
 )
 
 back_kb = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text="⬅️ Назад")]
-    ],
+    keyboard=[[KeyboardButton(text="⬅️ Назад")]],
     resize_keyboard=True
 )
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
-    await message.answer(
-        "👋 Привет! Добро пожаловать в бот канала Адлета!\n\nВыберите действие ниже 👇",
-        reply_markup=main_kb
-    )
+    await message.answer("👋 Привет! Добро пожаловать в бот канала Адлета!\n\nВыберите действие ниже 👇", reply_markup=main_kb)
 
 @dp.message(F.text == "💳 Оплатить доступ")
 async def pay(message: types.Message):
-    await message.answer(
-        "💳 Тарифы:\n\n• 1 месяц — 5000 тг\n• 3 месяца — 12000 тг\n\nПосле оплаты отправьте чек сюда 📎",
-        reply_markup=back_kb
-    )
+    await message.answer("💳 Тарифы:\n\n• 1 месяц — 5000 тг\n• 3 месяца — 12000 тг\n\nПосле оплаты отправьте чек сюда 📎", reply_markup=back_kb)
 
 @dp.message(F.text == "ℹ Подробнее о канале")
 async def about(message: types.Message):
-    await message.answer(
-        "⚽ Канал тренера Адлета — это:\n• Обучающий контент по футболу\n• Разбор тактик\n• Советы для игроков\n\nПодключайтесь и улучшайте игру!",
-        reply_markup=back_kb
-    )
+    await message.answer("⚽ Канал тренера Адлета — это:\n• Обучающий контент по футболу\n• Разбор тактик\n• Советы для игроков\n\nПодключайтесь и улучшайте игру!", reply_markup=back_kb)
 
 @dp.message(F.text == "🆘 Поддержка")
 async def support(message: types.Message):
-    await message.answer(
-        f"✉ Поддержка: @{SUPPORT_USERNAME}",
-        reply_markup=back_kb
-    )
+    await message.answer(f"✉ Поддержка: @{SUPPORT_USERNAME}", reply_markup=back_kb)
 
 @dp.message(F.text == "⬅️ Назад")
 async def back(message: types.Message):
@@ -69,11 +56,8 @@ async def back(message: types.Message):
 
 @dp.message(F.document | F.photo)
 async def handle_files(message: types.Message):
-    if ADMIN_ID:
-        await message.forward(ADMIN_ID)
-        await message.answer("✅ Чек отправлен на проверку админу.")
-    else:
-        await message.answer("⚠️ ADMIN_ID не задан. Сообщи админу!")
+    await message.forward(ADMIN_ID)
+    await message.answer("✅ Чек отправлен на проверку админу.")
 
 @dp.message(Command("approve"))
 async def approve(message: types.Message):
@@ -89,19 +73,14 @@ async def on_shutdown(app):
     await bot.delete_webhook()
     await bot.session.close()
 
-async def handle_health(request):
+async def health(request):
     return web.Response(text="I'm alive!")
-
-async def webhook_handler(request):
-    data = await request.json()
-    update = types.Update(**data)
-    await dp.feed_update(bot, update)
-    return web.Response()
 
 async def main():
     app = web.Application()
-    app.router.add_post(WEBHOOK_PATH, webhook_handler)
-    app.router.add_get("/", handle_health)
+    app.router.add_get("/", health)
+    SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path=WEBHOOK_PATH)
+    setup_application(app, dp, bot=bot)
     app.on_startup.append(on_startup)
     app.on_shutdown.append(on_shutdown)
     port = int(os.getenv("PORT", "10000"))
