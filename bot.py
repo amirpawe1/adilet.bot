@@ -16,21 +16,22 @@ WEBHOOK_URL = WEBHOOK_HOST + WEBHOOK_PATH
 
 logging.basicConfig(level=logging.INFO)
 
-# 📦 Бот и Диспетчер
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-pending_users = {}
+main_kb = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [InlineKeyboardButton(text="💳 Оплатить доступ", callback_data="pay")],
+        [InlineKeyboardButton(text="ℹ Подробнее о канале", callback_data="about")],
+        [InlineKeyboardButton(text="🆘 Поддержка", callback_data="support")]
+    ]
+)
 
-main_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="💳 Оплатить доступ", callback_data="pay")],
-    [InlineKeyboardButton(text="ℹ Подробнее о канале", callback_data="about")],
-    [InlineKeyboardButton(text="🆘 Поддержка", callback_data="support")]
-])
-
-back_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="⬅️ Назад", callback_data="back")]
-])
+back_kb = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back")]
+    ]
+)
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
@@ -46,10 +47,9 @@ async def pay(callback: types.CallbackQuery):
         "• 1 месяц — 4990₸\n"
         "• 6 месяцев — 19990₸\n"
         "• 12 месяцев — 44990₸\n\n"
-        "После оплаты отправьте чек сюда 📎 (фото или файл).",
+        "После оплаты отправьте чек сюда 📎",
         reply_markup=back_kb
     )
-    pending_users[callback.from_user.id] = True
     await callback.answer()
 
 @dp.callback_query(F.data == "about")
@@ -82,60 +82,40 @@ async def back(callback: types.CallbackQuery):
 
 @dp.message(F.document | F.photo)
 async def handle_files(message: types.Message):
-    user_id = message.from_user.id
-    if user_id in pending_users and pending_users[user_id]:
-        # Пересылаем админу
+    if ADMIN_ID:
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="✅ Подтвердить", callback_data=f"approve:{message.from_user.id}")],
+                [InlineKeyboardButton(text="❌ Отклонить", callback_data=f"reject:{message.from_user.id}")]
+            ]
+        )
         await message.forward(ADMIN_ID)
-        await message.answer("✅ Чек отправлен на проверку админу.")
-        # Уведомляем админа
         await bot.send_message(
             ADMIN_ID,
-            f"📥 Новый чек от пользователя:\n"
-            f"👤 {message.from_user.full_name}\n"
-            f"🆔 ID: {message.from_user.id}\n\n"
-            f"Чтобы подтвердить доступ:\n"
-            f"/approve {message.from_user.id}\n\n"
-            f"Чтобы отклонить:\n"
-            f"/reject {message.from_user.id}"
+            f"📎 Новый чек от @{message.from_user.username or message.from_user.id}",
+            reply_markup=kb
         )
+        await message.answer("✅ Чек отправлен на проверку админу.")
     else:
-        await message.answer("⚠️ Сначала выберите 'Оплатить доступ', затем отправьте чек.")
+        await message.answer("⚠️ ADMIN_ID не задан.")
 
-@dp.message(Command("approve"))
-async def approve(message: types.Message):
-    if message.from_user.id == ADMIN_ID:
-        parts = message.text.split()
-        if len(parts) == 2 and parts[1].isdigit():
-            user_id = int(parts[1])
-            await bot.send_message(
-                user_id,
-                f"✅ Оплата подтверждена! Вот ссылка на канал:\n{CHANNEL_LINK}"
-            )
-            await message.answer(f"✅ Доступ для пользователя {user_id} подтверждён.")
-            if user_id in pending_users:
-                del pending_users[user_id]
-        else:
-            await message.answer("⚠ Используй: /approve user_id")
+@dp.callback_query(F.data.startswith("approve"))
+async def approve(callback: types.CallbackQuery):
+    if callback.from_user.id == ADMIN_ID:
+        user_id = int(callback.data.split(":")[1])
+        await bot.send_message(user_id, f"✅ Доступ подтверждён! Вот ссылка на канал:\n{CHANNEL_LINK}")
+        await callback.message.edit_text("✅ Пользователь получил доступ!")
     else:
-        await message.answer("⛔ У тебя нет прав для этой команды.")
+        await callback.answer("⛔ Нет прав", show_alert=True)
 
-@dp.message(Command("reject"))
-async def reject(message: types.Message):
-    if message.from_user.id == ADMIN_ID:
-        parts = message.text.split()
-        if len(parts) == 2 and parts[1].isdigit():
-            user_id = int(parts[1])
-            await bot.send_message(
-                user_id,
-                "❌ Оплата не подтверждена. Пожалуйста, проверьте реквизиты и попробуйте снова."
-            )
-            await message.answer(f"❌ Оплата пользователя {user_id} отклонена.")
-            if user_id in pending_users:
-                del pending_users[user_id]
-        else:
-            await message.answer("⚠ Используй: /reject user_id")
+@dp.callback_query(F.data.startswith("reject"))
+async def reject(callback: types.CallbackQuery):
+    if callback.from_user.id == ADMIN_ID:
+        user_id = int(callback.data.split(":")[1])
+        await bot.send_message(user_id, "❌ Ваш чек отклонён. Попробуйте снова или обратитесь в поддержку.")
+        await callback.message.edit_text("❌ Пользователю отказано в доступе.")
     else:
-        await message.answer("⛔ У тебя нет прав для этой команды.")
+        await callback.answer("⛔ Нет прав", show_alert=True)
 
 async def on_startup(app):
     await bot.set_webhook(WEBHOOK_URL)
@@ -144,18 +124,23 @@ async def on_shutdown(app):
     await bot.delete_webhook()
     await bot.session.close()
 
+async def handle_webhook(request):
+    data = await request.json()
+    update = types.Update(**data)
+    await dp.feed_update(bot, update)
+    return web.Response()
+
 async def handle_health(request):
     return web.Response(text="I'm alive!")
 
 def main():
     app = web.Application()
-    app.router.add_post(WEBHOOK_PATH, dp.start_webhook)
+    app.router.add_post(WEBHOOK_PATH, handle_webhook)
     app.router.add_get("/", handle_health)
     app.on_startup.append(on_startup)
     app.on_shutdown.append(on_shutdown)
     port = int(os.getenv("PORT", "10000"))
     web.run_app(app, host="0.0.0.0", port=port)
-
 
 if __name__ == "__main__":
     main()
