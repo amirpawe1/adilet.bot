@@ -76,7 +76,7 @@ async def on_shutdown(app):
 async def health(request):
     return web.Response(text="I'm alive!")
 
-async def main():
+def main():
     app = web.Application()
     app.router.add_get("/", health)
     SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path=WEBHOOK_PATH)
@@ -87,5 +87,4 @@ async def main():
     web.run_app(app, host="0.0.0.0", port=port)
 
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+    main()
