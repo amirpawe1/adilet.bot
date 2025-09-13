@@ -1,5 +1,7 @@
 import os
 import logging
+import asyncio
+from datetime import datetime, timedelta
 from aiohttp import web
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
@@ -8,7 +10,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = 7341098964
 SUPPORT_USERNAME = "xe8oz"
-CHANNEL_LINK = "https://t.me/+4KdL8SuRDuA4YjZi"
+CHANNEL_ID = -1002769903858
 
 WEBHOOK_HOST = os.getenv("WEBHOOK_HOST", os.getenv("RENDER_EXTERNAL_URL", ""))
 WEBHOOK_PATH = "/webhook"
@@ -18,6 +20,8 @@ logging.basicConfig(level=logging.INFO)
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
+
+subscriptions = {}
 
 main_kb = InlineKeyboardMarkup(
     inline_keyboard=[
@@ -36,8 +40,8 @@ back_kb = InlineKeyboardMarkup(
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     await message.answer(
-        "👋 Приветствую! Это официальный бот Адилета Кудайбергена, который поможет узнать больше о закрытом канале База и вступить в него." 
-        "подписка ежемесячная 4990₸ или 9$, оплату принимаем через приложение Kaspi.kz"
+        "👋 Приветствую! Это официальный бот Адилета Кудайбергена, который поможет узнать больше о закрытом канале База и вступить в него."
+        "Подписка ежемесячная 4990₸ или 9$, оплату принимаем через приложение Kaspi.kz."
         "Нажимай кнопку ниже:\n\nВыберите действие ниже 👇",
         reply_markup=main_kb
     )
@@ -45,8 +49,8 @@ async def cmd_start(message: types.Message):
 @dp.callback_query(F.data == "pay")
 async def pay(callback: types.CallbackQuery):
     await callback.message.edit_text(
-        "Реквезиты: +77777777777"
-        "💳 Тарифы:\n\n"
+        "Реквизиты: +77777777777\n\n"
+        "💳 Тарифы:\n"
         "• 1 месяц — 4990₸\n"
         "• 6 месяцев — 19990₸\n"
         "• 12 месяцев — 44990₸\n\n"
@@ -106,7 +110,19 @@ async def handle_files(message: types.Message):
 async def approve(callback: types.CallbackQuery):
     if callback.from_user.id == ADMIN_ID:
         user_id = int(callback.data.split(":")[1])
-        await bot.send_message(user_id, f"✅ Доступ подтверждён! Вот ссылка на канал:\n{CHANNEL_LINK}")
+
+        invite_link = await bot.create_chat_invite_link(
+            chat_id=CHANNEL_ID,
+            member_limit=1,
+            expire_date=int((datetime.utcnow() + timedelta(days=1)).timestamp())
+        )
+
+        subscriptions[user_id] = {
+            "expire": datetime.utcnow() + timedelta(days=30),
+            "link": invite_link.invite_link
+        }
+
+        await bot.send_message(user_id, f"✅ Доступ подтверждён! Вот твоя персональная ссылка (работает только для тебя):\n{subscriptions[user_id]['link']}")
         await callback.message.edit_text("✅ Пользователь получил доступ!")
     else:
         await callback.answer("⛔ Нет прав", show_alert=True)
@@ -120,8 +136,29 @@ async def reject(callback: types.CallbackQuery):
     else:
         await callback.answer("⛔ Нет прав", show_alert=True)
 
+async def check_subscriptions():
+    while True:
+        now = datetime.utcnow()
+        for user_id, data in list(subscriptions.items()):
+            expire = data["expire"]
+
+            if expire - timedelta(days=3) < now < expire:
+                await bot.send_message(user_id, "⚠️ Ваша подписка заканчивается через 3 дня! Продлите доступ.")
+
+            if expire < now:
+                try:
+                    await bot.ban_chat_member(CHANNEL_ID, user_id)
+                    await bot.unban_chat_member(CHANNEL_ID, user_id)
+                except Exception as e:
+                    logging.error(f"Ошибка при удалении {user_id}: {e}")
+                await bot.send_message(user_id, "❌ Ваша подписка закончилась. Для продолжения оформите новую.")
+                subscriptions.pop(user_id, None)
+
+        await asyncio.sleep(86400)
+
 async def on_startup(app):
     await bot.set_webhook(WEBHOOK_URL)
+    asyncio.create_task(check_subscriptions())
 
 async def on_shutdown(app):
     await bot.delete_webhook()
